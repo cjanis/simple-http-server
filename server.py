@@ -11,15 +11,56 @@ JSON_LOGGER_FILE_NAME = 'access.log.json'
 app = Flask(__name__)
 
 class LogRequest(object):
-    """descprption goes here"""
+    """descprption goes here
+    TODO: make this as a Flask object
+    """
 
-    def __init__(self, request_object):
+    NGINX_ADDED_HEADERS = [
+                            'x-remote-addr',
+                            'x-remote-port',
+                            'x-server-addr',
+                            'x-host',
+                            'x-scheme',
+                            'x-is-secure',
+                            'x-server-protocol',
+                            'x-server-port',
+                            'x-tcp-rtt',
+                            'x-tcp-rttvar',
+                            'x-tcp-snd-cwd',
+                            'x-tcp-rcv-space',
+                          ]
+
+    def __init__(self, request_object, nginx=False):
         """constructor"""
         # it seems it is actually better to make an extension to flask.Request
         # class and use it instead of doing this
         self.request = request_object
-        self._deleate_extra_headers()
+        self._delete_extra_headers()
         self.request.headers_json = self.headers_to_json()
+        self.nginx_extra_data = self.extract_nginx_headers_data()
+
+    def extract_nginx_headers_data(self):
+        """method to extract data from nginx added headers
+        """
+        data = {}
+        environ_copy = self.request.environ.copy()
+
+        # if header name in NGINX_ADDED_HEADERS extract data 
+        # and remove this header
+        for env_key, env_val  in environ_copy.iteritems():
+            # HTTP_X_SERVER_ADDR -> x-server-addr
+            nginx_header = env_key.lower().replace('_','-')[5:]
+            if nginx_header in self.NGINX_ADDED_HEADERS:
+                # data.append({nginx_header: env_val})
+                data[nginx_header] = env_val
+                self.request.environ.pop(env_key)
+
+        for header in self.NGINX_ADDED_HEADERS:
+            if header not in data:
+                data[header] = '0'
+        print data
+        return data
+
 
     def headers_to_json(self):
         """Converts list of headers to list of header name: value pairs"""
@@ -27,7 +68,7 @@ class LogRequest(object):
                 header in request.headers]
 
 
-    def _deleate_extra_headers(self):
+    def _delete_extra_headers(self):
         """for a some reason Flask' request.headers always contains few headers
         # need to check if reqest.headers 'Content-type' ot 'Content-length'
         # values are empty, then do not include them into list of headers
@@ -41,9 +82,11 @@ class LogRequest(object):
                         'content-type',
                         'content-length'
                         ]
-        clean_headers = [header for header in self.request.headers if ((header[0].lower() not in extra_headers and header[1] != '') 
-                            or (header[0].lower() not in extra_headers and header[1] == ''))]
-        self.request.headers = clean_headers
+
+        environ_copy = self.request.environ.copy()
+        for r_header, r_value in environ_copy.iteritems():
+            if ((r_header.lower().replace('_','-') in extra_headers and r_value == '') or (r_header.lower().replace('_','-') in extra_headers and r_value != '')):
+                self.request.environ.pop(r_header)
         return True
 
     def headers_to_string(self):
@@ -90,26 +133,47 @@ class LogRequest(object):
 @app.before_request
 def log_entry():
 
-    print(request.headers)
-    proceed_request = LogRequest(request)
-
+    # TODO: add config option
+    proceed_request = LogRequest(request, nginx=True)
     headers = proceed_request.headers_to_string()
-    print(request.url)
-
+    extra_data = proceed_request.nginx_extra_data
     # TODO: proper IPv6 handling
     # TODO: figure out why 
     context = {
-        'remote_ip': request.remote_addr,
-        'method': request.method,
-        'path': request.path,
-        'query': proceed_request.quesry_to_json_string(),
-        'headers': proceed_request.headers_to_json_string(),
-        'port': request.url.split('/')[2].split(":")[1]
+        "remote_ip": extra_data["x-remote-addr"],
+        "remote_port": extra_data["x-remote-port"],
+        "http_version": extra_data["x-server-protocol"],
+        "server_port": extra_data["x-server-port"],
+        "secure": extra_data["x-is-secure"],
+        "target_domain": extra_data['x-host'],
+        "tcp_rtt": extra_data['x-tcp-rtt'],
+        "tcp_rttvar": extra_data['x-tcp-rttvar'],
+        "tcp_snd_cwd": extra_data['x-tcp-snd-cwd'],
+        "tcp_rcv_space": extra_data['x-tcp-rcv-space'],
+        "method": request.method,
+        "path": request.path,
+        "query": proceed_request.quesry_to_json_string(),
+        "headers": proceed_request.headers_to_json_string(),
     }
 
-    app.logger.info('{"remote_ip": "%(remote_ip)s", "method": "%(method)s", '\
-                     '"path": "%(path)s", "query": %(query)s, '\
-                     '"headers": %(headers)s , "port": "%(port)s"'\
+    app.logger.info('{"tcp_info": { '\
+                     '"remote_ip": "%(remote_ip)s", '\
+                     '"remote_port": "%(remote_port)s", '\
+                     '"server_port": "%(server_port)s", '\
+
+                     '"tcp_rtt": "%(tcp_rtt)s", '\
+                     '"tcp_rttvar": "%(tcp_rttvar)s", '\
+                     '"tcp_snd_cwd": "%(tcp_snd_cwd)s", '\
+                     '"tcp_rcv_space": "%(tcp_rcv_space)s"'\
+                     '}, ' \
+
+                     '"target_domain": "%(target_domain)s", '\
+                     '"http_version": "%(http_version)s", '\
+                     '"secure": "%(secure)s", '\
+                     '"method": "%(method)s", '\
+                     '"path": "%(path)s", '\
+                     '"query": %(query)s, '\
+                     '"headers": %(headers)s'\
                     '}', context)
 
 @app.route('/', defaults={'path': ''})
@@ -120,6 +184,7 @@ def hello_world(path):
 
 if __name__ == "__main__":
 
+    # TODO: make this a configurable
     port = 8000
     if len(sys.argv) > 1 and sys.argv[1].isdigit():
         port = int(sys.argv[1])
@@ -136,5 +201,6 @@ if __name__ == "__main__":
     app.logger.setLevel(logging.INFO)
     app.logger.addHandler(json_file_handler)
 
-    app.run('0.0.0.0', port=port)
-    # app.run(port=port)
+    # TODO: make this configurable
+    # app.run('0.0.0.0', port=port)
+    app.run(port=port)
