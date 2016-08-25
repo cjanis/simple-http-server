@@ -58,7 +58,6 @@ class LogRequest(object):
         for header in self.NGINX_ADDED_HEADERS:
             if header not in data:
                 data[header] = '0'
-        print data
         return data
 
 
@@ -145,7 +144,7 @@ def log_entry():
         "http_version": extra_data["x-server-protocol"],
         "server_port": extra_data["x-server-port"],
         "secure": extra_data["x-is-secure"],
-        "target_domain": extra_data['x-host'],
+        "target_host": extra_data['x-host'],
         "tcp_rtt": extra_data['x-tcp-rtt'],
         "tcp_rttvar": extra_data['x-tcp-rttvar'],
         "tcp_snd_cwd": extra_data['x-tcp-snd-cwd'],
@@ -156,24 +155,23 @@ def log_entry():
         "headers": proceed_request.headers_to_json_string(),
     }
 
-    app.logger.info('{"tcp_info": { '\
+    app.logger.info('{'\
                      '"remote_ip": "%(remote_ip)s", '\
                      '"remote_port": "%(remote_port)s", '\
                      '"server_port": "%(server_port)s", '\
-
-                     '"tcp_rtt": "%(tcp_rtt)s", '\
-                     '"tcp_rttvar": "%(tcp_rttvar)s", '\
-                     '"tcp_snd_cwd": "%(tcp_snd_cwd)s", '\
-                     '"tcp_rcv_space": "%(tcp_rcv_space)s"'\
-                     '}, ' \
-
-                     '"target_domain": "%(target_domain)s", '\
+                     '"target_host": "%(target_host)s", '\
                      '"http_version": "%(http_version)s", '\
                      '"secure": "%(secure)s", '\
                      '"method": "%(method)s", '\
                      '"path": "%(path)s", '\
                      '"query": %(query)s, '\
-                     '"headers": %(headers)s'\
+                     '"headers": %(headers)s, '\
+                     '"tcp_info": { '\
+                        '"tcp_rtt": "%(tcp_rtt)s", '\
+                        '"tcp_rttvar": "%(tcp_rttvar)s", '\
+                        '"tcp_snd_cwd": "%(tcp_snd_cwd)s", '\
+                        '"tcp_rcv_space": "%(tcp_rcv_space)s"'\
+                         '}'\
                     '}', context)
 
 @app.route('/', defaults={'path': ''})
