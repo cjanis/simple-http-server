@@ -174,8 +174,8 @@ def log_entry():
                          '}'\
                     '}', context)
 
-@app.route('/', defaults={'path': ''}, methods=['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
-@app.route('/<path:path>')
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>', methods=['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
 def hello_world(path):
     return 'Ok\n'
 
