@@ -63,8 +63,7 @@ class LogRequest(object):
 
     def headers_to_json(self):
         """Converts list of headers to list of header name: value pairs"""
-        return [{'name': header[0], 'value': header[1]} for 
-                header in request.headers]
+        return {header[0]: header[1] for header in request.headers}
 
 
     def _delete_extra_headers(self):
@@ -113,19 +112,18 @@ class LogRequest(object):
     def headers_to_json_string(self):
         """returns headers json formatted string
         """ 
-        
         return json.dumps(self.headers_to_json())
 
     def quesry_to_json_string(self):
         """returns query json formatted string
         """
-        query = []
+        query = {}
         for item in self.request.args.lists():
             if len(item[1]) > 1:
                 for value in item[1]:
-                    query.append({'name': item[0], 'value': value})
+                    query[item[0]] = value
             else:
-                query.append({'name': item[0], 'value': item[1][0]})
+                query[item[0]] = item[1][0]
         return json.dumps(query)
 
 
