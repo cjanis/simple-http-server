@@ -3,10 +3,14 @@ import logging
 import json
 import time
 
+from logging.handlers import RotatingFileHandler
+
 from flask import Flask, render_template, make_response, request, Response, current_app
 
 LOGGER_FILE_NAME = 'access.log'
 JSON_LOGGER_FILE_NAME = 'access.log.json'
+MAX_LOG_SIZE = 20971520
+NUMBER_OF_LOG_FILES = 100
 
 app = Flask(__name__)
 
@@ -187,7 +191,9 @@ if __name__ == "__main__":
 
     print('Starting test server on port {0}'.format(port))
 
-    json_file_handler = logging.FileHandler(JSON_LOGGER_FILE_NAME)
+    json_file_handler = RotatingFileHandler(JSON_LOGGER_FILE_NAME,
+                                            maxBytes=MAX_LOG_SIZE,
+                                            backupCount=NUMBER_OF_LOG_FILES)
     # %(created)f <- time.time() to convert to ms int(time.time()*1000)
     json_formatter = logging.Formatter('{"timestamp": "%(created)f", "time": "%(asctime)s", "loglevel": "%(levelname)s", "request_data": %(message)s}')
     # set formatter to use gmt format
