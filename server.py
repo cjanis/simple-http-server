@@ -6,6 +6,7 @@ import time
 from logging.handlers import RotatingFileHandler
 
 from flask import Flask, render_template, make_response, request, Response, current_app
+from werkzeug.datastructures import Headers, MultiDict
 
 LOGGER_FILE_NAME = 'access.log'
 JSON_LOGGER_FILE_NAME = 'access.log.json'
@@ -14,9 +15,8 @@ NUMBER_OF_LOG_FILES = 100
 
 app = Flask(__name__)
 
-class LogRequest(object):
-    """descprption goes here
-    TODO: make this as a Flask object
+class HeadersParser(object):
+    """Parse request headers
     """
 
     NGINX_ADDED_HEADERS = [
@@ -34,127 +34,142 @@ class LogRequest(object):
                             'x-tcp-rcv-space',
                           ]
 
-    def __init__(self, request_object, nginx=False):
-        """constructor"""
-        # it seems it is actually better to make an extension to flask.Request
-        # class and use it instead of doing this
-        self.request = request_object
-        self._delete_extra_headers()
-        self.request.headers_json = self.headers_to_json()
-        self.nginx_extra_data = self.extract_nginx_headers_data()
+    def __init__(self, headers_obj):
+        """
+        headers_obj: request.headers object
+        """
+        self.headers = Headers(headers_obj)
 
-    def extract_nginx_headers_data(self):
+    def remove_extra_headers(self):
+        extra_headers = [
+                'content-type',
+                'content-length'
+                ]
+        for header in self.headers.items():
+            h_name = header[0]
+            h_value = header[1]
+            if (h_name.lower() in extra_headers and h_value == '') or (h_name.lower in extra_headers and h_value != ''):
+                del self.headers[h_name]
+        return True
+
+    def extract_nginx_headers_data(self, remove_data=True):
         """method to extract data from nginx added headers
         """
         data = {}
-        environ_copy = self.request.environ.copy()
 
         # if header name in NGINX_ADDED_HEADERS extract data 
-        # and remove this header
-        for env_key, env_val  in environ_copy.iteritems():
-            # HTTP_X_SERVER_ADDR -> x-server-addr
-            nginx_header = env_key.lower().replace('_','-')[5:]
-            if nginx_header in self.NGINX_ADDED_HEADERS:
-                # data.append({nginx_header: env_val})
-                data[nginx_header] = env_val
-                self.request.environ.pop(env_key)
 
+        for header in self.headers:
+            h_name = header[0].lower()
+            h_value = header[1]
+            if (h_name in self.NGINX_ADDED_HEADERS):
+                data[h_name] = h_value
+
+        if remove_data:
+            self.remove_nginx_headers()
+
+        # if header is missing set it's value to 0
         for header in self.NGINX_ADDED_HEADERS:
             if header not in data:
                 data[header] = '0'
+
         return data
 
+    def remove_nginx_headers(self):
+        """ method to delete all Nginx added headers from request headers
+        """
+        for header in self.headers.items():
+            h_name = header[0]
+            if h_name.lower() in self.NGINX_ADDED_HEADERS:
+                del self.headers[h_name]
+
+        return True
 
     def headers_to_json(self):
         """Converts list of headers to list of header name: value pairs"""
-        return {header[0]: header[1] for header in request.headers}
+        return {header[0]: header[1] for header in self.headers}
 
 
-    def _delete_extra_headers(self):
-        """for a some reason Flask' request.headers always contains few headers
-        # need to check if reqest.headers 'Content-type' ot 'Content-length'
-        # values are empty, then do not include them into list of headers
-        # It will also remove these two headers in case client send them, but
-        # value was empty.
-        # Need to fix/file Flask issue to fix this and also preserve headers 
-        # order
-        this method just clean up request object by removing thes extra headers
+class MultiDictParser(object):
+    """
+    werkzeug.datastructures.MultiDict to dict
+    """
+
+    def __init__(self, multidict):
+        self.multidict = multidict
+
+    def to_json(self):
         """
-        extra_headers = [
-                        'content-type',
-                        'content-length'
-                        ]
-
-        environ_copy = self.request.environ.copy()
-        for r_header, r_value in environ_copy.iteritems():
-            if ((r_header.lower().replace('_','-') in extra_headers and r_value == '') or (r_header.lower().replace('_','-') in extra_headers and r_value != '')):
-                self.request.environ.pop(r_header)
-        return True
-
-    def headers_to_string(self):
-        """ returns request headers as string of header_name:header_value
-        using | as a delimiter bw headers
+        converts MultiDict to regular json dict. It uses the samem method as 
+        MultiDict.to_dict(flat=Flase), but returns structure like
+        {'name': 'v1', 'name': 'v2'} instead of {'name': ['v1', v2]}
         """
-        headers_str = ''
-        always_added_headers = [
-                                'Content-type',
-                                'Content-length'
-                               ]
-        for header in self.request.headers:
-            # for a some reason Flask' request.headers always contains few headers
-            # need to check if reqest.headers 'Content-type' ot 'Contetn-length'
-            # values are empty, then do not include them into list of headers
-            # It will also remove these two headers in case client send them, but
-            # value was empty.
-            # Need to fix/file Flask issue to fix this and also preserve headers 
-            # order
-            if header[0] not in always_added_headers and header[1] != '': 
-                headers_str = headers_str + '{}:{}|'.format(header[0], header[1])
-
-        return headers_str
-
-    def headers_to_json_string(self):
-        """returns headers json formatted string
-        """ 
-        return json.dumps(self.headers_to_json())
-
-    def quesry_to_json_string(self):
-        """returns query json formatted string
-        """
-        query = {}
-        for item in self.request.args.lists():
+        res = {}
+        for item in self.multidict.lists():
             if len(item[1]) > 1:
+                val_list = []
                 for value in item[1]:
-                    query[item[0]] = value
+                    val_list.append(value)
+                res[item[0]] = val_list
             else:
-                query[item[0]] = item[1][0]
-        return json.dumps(query)
+                res[item[0]] = item[1][0]
+        return res
 
+
+class BodyParser(object):
+
+    def __init__(self, request_obj):
+        self.request = request_obj
+
+    def get_body(self):
+        """
+        extracts and returns request body. retuns body as string
+        First it checks for known content type, if content type 
+        application/x-www-form-urlencoded it converts it to json using MultiDictParser
+        application/*+json returns json
+        all other types just return request.data
+        """
+        # TODO: refactor this method
+        body = json.dumps({})
+        if self.request.headers['content-length'] != '':
+            if self.request.headers.get('content-type') == 'application/x-www-form-urlencoded':
+                body = json.dumps(MultiDictParser(self.request.form).to_json())
+            elif self.request.is_json:
+                body = json.dumps(self.request.get_json())
+            else:
+                body = str(self.request.data)
+        elif self.request.headers['content-length'] == '0':
+            body = {}
+
+        return body
 
 @app.before_request
 def log_entry():
 
-    # TODO: add config option
-    proceed_request = LogRequest(request, nginx=True)
-    headers = proceed_request.headers_to_string()
-    extra_data = proceed_request.nginx_extra_data
-    # TODO: proper IPv6 handling
-    # TODO: figure out why 
+    parsed_headers = HeadersParser(request.headers)
+    # remove Nginx added headers
+    parsed_headers.remove_extra_headers()
+    nginx_data = parsed_headers.extract_nginx_headers_data()
+    client_headers = json.dumps(parsed_headers.headers_to_json())
+    query = json.dumps(MultiDictParser(request.args).to_json())
+    body = BodyParser(request).get_body()
+
     context = {
-        "remote_ip": extra_data["x-remote-addr"],
-        "remote_port": extra_data["x-remote-port"],
-        "http_version": extra_data["x-server-protocol"],
-        "server_port": extra_data["x-server-port"],
-        "secure": extra_data["x-is-secure"],
-        "target_host": extra_data['x-host'],
-        "tcp_rtt": extra_data['x-tcp-rtt'],
-        "tcp_rttvar": extra_data['x-tcp-rttvar'],
-        "tcp_snd_cwd": extra_data['x-tcp-snd-cwd'],
-        "tcp_rcv_space": extra_data['x-tcp-rcv-space'],
+        "remote_ip": nginx_data["x-remote-addr"],
+        "remote_port": nginx_data["x-remote-port"],
+        "http_version": nginx_data["x-server-protocol"],
+        "server_port": nginx_data["x-server-port"],
+        "secure": nginx_data["x-is-secure"],
+        "target_host": nginx_data['x-host'],
+        "tcp_rtt": nginx_data['x-tcp-rtt'],
+        "tcp_rttvar": nginx_data['x-tcp-rttvar'],
+        "tcp_snd_cwd": nginx_data['x-tcp-snd-cwd'],
+        "tcp_rcv_space": nginx_data['x-tcp-rcv-space'],
         "method": request.method,
         "path": request.path,
-        "query": proceed_request.quesry_to_json_string(),
-        "headers": proceed_request.headers_to_json_string(),
+        "query": query,
+        "headers": client_headers,
+        "body": body
     }
 
     app.logger.info('{'\
@@ -168,6 +183,7 @@ def log_entry():
                      '"path": "%(path)s", '\
                      '"query": %(query)s, '\
                      '"headers": %(headers)s, '\
+                     '"body": %(body)s, '\
                      '"tcp_info": { '\
                         '"tcp_rtt": "%(tcp_rtt)s", '\
                         '"tcp_rttvar": "%(tcp_rttvar)s", '\
