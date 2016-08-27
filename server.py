@@ -137,7 +137,7 @@ class BodyParser(object):
             elif self.request.is_json:
                 body = json.dumps(self.request.get_json())
             else:
-                body = str(self.request.data)
+                body = json.dumps(self.request.data)
         elif self.request.headers['content-length'] == '0':
             body = {}
 
