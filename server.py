@@ -145,15 +145,16 @@ class BodyParser(object):
         """
         # TODO: refactor this method
         body = json.dumps({})
-        if self.request.headers['content-length'] != '':
-            if self.request.headers.get('content-type') == 'application/x-www-form-urlencoded':
-                body = json.dumps(MultiDictParser(self.request.form).to_json())
-            elif self.request.is_json:
-                body = json.dumps(self.request.get_json())
-            else:
-                body = json.dumps(self.request.data)
-        elif self.request.headers['content-length'] == '0':
-            body = {}
+        if 'content-length' in self.request.headers:
+            if self.request.headers['content-length'] != '':
+                if self.request.headers.get('content-type') == 'application/x-www-form-urlencoded':
+                    body = json.dumps(MultiDictParser(self.request.form).to_json())
+                elif self.request.is_json:
+                    body = json.dumps(self.request.get_json())
+                else:
+                    body = json.dumps(self.request.data)
+            elif self.request.headers['content-length'] == '0':
+                body = json.dumps({})
 
         return body
 
