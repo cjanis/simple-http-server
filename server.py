@@ -15,6 +15,20 @@ NUMBER_OF_LOG_FILES = 100
 
 app = Flask(__name__)
 
+logger = logging.getLogger('blah')
+
+json_file_handler = RotatingFileHandler(JSON_LOGGER_FILE_NAME,
+                                        maxBytes=MAX_LOG_SIZE,
+                                        backupCount=NUMBER_OF_LOG_FILES)
+# %(created)f <- time.time() to convert to ms int(time.time()*1000)
+json_formatter = logging.Formatter('{"timestamp": "%(created)f", "time": "%(asctime)s", "loglevel": "%(levelname)s", "request_data": %(message)s}')
+# set formatter to use gmt format
+json_formatter.converter = time.gmtime
+json_file_handler.setFormatter(json_formatter)
+
+logger.setLevel(logging.INFO)
+logger.addHandler(json_file_handler)
+
 class HeadersParser(object):
     """Parse request headers
     """
@@ -172,7 +186,7 @@ def log_entry():
         "body": body
     }
 
-    app.logger.info('{'\
+    logger.info('{'\
                      '"remote_ip": "%(remote_ip)s", '\
                      '"remote_port": "%(remote_port)s", '\
                      '"server_port": "%(server_port)s", '\
@@ -206,18 +220,6 @@ if __name__ == "__main__":
         port = int(sys.argv[1])
 
     print('Starting test server on port {0}'.format(port))
-
-    json_file_handler = RotatingFileHandler(JSON_LOGGER_FILE_NAME,
-                                            maxBytes=MAX_LOG_SIZE,
-                                            backupCount=NUMBER_OF_LOG_FILES)
-    # %(created)f <- time.time() to convert to ms int(time.time()*1000)
-    json_formatter = logging.Formatter('{"timestamp": "%(created)f", "time": "%(asctime)s", "loglevel": "%(levelname)s", "request_data": %(message)s}')
-    # set formatter to use gmt format
-    json_formatter.converter = time.gmtime
-    json_file_handler.setFormatter(json_formatter)
-
-    app.logger.setLevel(logging.INFO)
-    app.logger.addHandler(json_file_handler)
 
     # TODO: make this configurable
     # app.run('0.0.0.0', port=port)
