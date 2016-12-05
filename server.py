@@ -1,51 +1,31 @@
 import sys
-import logging
 import json
 import time
-
+import argparse
+import os
+import logging
 from logging.handlers import RotatingFileHandler
 
 from flask import Flask, render_template, make_response, request, Response, current_app
 from werkzeug.datastructures import Headers, MultiDict
 
-LOGGER_FILE_NAME = 'access.log'
-JSON_LOGGER_FILE_NAME = 'access.log.json'
-MAX_LOG_SIZE = 20971520
-NUMBER_OF_LOG_FILES = 100
-
-app = Flask(__name__)
-
-logger = logging.getLogger('blah')
-
-json_file_handler = RotatingFileHandler(JSON_LOGGER_FILE_NAME,
-                                        maxBytes=MAX_LOG_SIZE,
-                                        backupCount=NUMBER_OF_LOG_FILES)
-# %(created)f <- time.time() to convert to ms int(time.time()*1000)
-json_formatter = logging.Formatter('{"timestamp": "%(created)f", "time": "%(asctime)s", "loglevel": "%(levelname)s", "request_data": %(message)s}')
-# set formatter to use gmt format
-json_formatter.converter = time.gmtime
-json_file_handler.setFormatter(json_formatter)
-
-logger.setLevel(logging.INFO)
-logger.addHandler(json_file_handler)
 
 class HeadersParser(object):
     """Parse request headers
     """
 
-    NGINX_ADDED_HEADERS = [
-                            'x-remote-addr',
-                            'x-remote-port',
-                            'x-server-addr',
-                            'x-host',
-                            'x-scheme',
-                            'x-is-secure',
-                            'x-server-protocol',
-                            'x-server-port',
-                            'x-tcp-rtt',
-                            'x-tcp-rttvar',
-                            'x-tcp-snd-cwd',
-                            'x-tcp-rcv-space',
+    NGINX_ADDED_HEADERS = ['x-remote-addr',
+                           'x-remote-port',
+                           'x-server-addr',
+                           'x-host',
+                           'x-scheme',
+                           'x-is-secure',
+                           'x-server-protocol',
+                           'x-server-port',
+                           'x-tcp-rtt',
+                           'x-tcp-rttvar',
+                           'x-tcp-snd-cwd',
+                           'x-tcp-rcv-space',
                           ]
 
     def __init__(self, headers_obj):
@@ -55,14 +35,14 @@ class HeadersParser(object):
         self.headers = Headers(headers_obj)
 
     def remove_extra_headers(self):
-        extra_headers = [
-                'content-type',
-                'content-length'
-                ]
+        extra_headers = ['content-type',
+                         'content-length'
+                        ]
         for header in self.headers.items():
             h_name = header[0]
             h_value = header[1]
-            if (h_name.lower() in extra_headers and h_value == '') or (h_name.lower in extra_headers and h_value != ''):
+            if (h_name.lower() in extra_headers and h_value == '')\
+                or (h_name.lower in extra_headers and h_value != ''):
                 del self.headers[h_name]
         return True
 
@@ -71,12 +51,12 @@ class HeadersParser(object):
         """
         data = {}
 
-        # if header name in NGINX_ADDED_HEADERS extract data 
+        # if header name in NGINX_ADDED_HEADERS extract data
 
         for header in self.headers:
             h_name = header[0].lower()
             h_value = header[1]
-            if (h_name in self.NGINX_ADDED_HEADERS):
+            if h_name in self.NGINX_ADDED_HEADERS:
                 data[h_name] = h_value
 
         if remove_data:
@@ -114,7 +94,7 @@ class MultiDictParser(object):
 
     def to_json(self):
         """
-        converts MultiDict to regular json dict. It uses the samem method as 
+        converts MultiDict to regular json dict. It uses the samem method as
         MultiDict.to_dict(flat=Flase), but returns structure like
         {'name': 'v1', 'name': 'v2'} instead of {'name': ['v1', v2]}
         """
@@ -138,7 +118,7 @@ class BodyParser(object):
     def get_body(self):
         """
         extracts and returns request body. retuns body as string
-        First it checks for known content type, if content type 
+        First it checks for known content type, if content type
         application/x-www-form-urlencoded it converts it to json using MultiDictParser
         application/*+json returns json
         all other types just return request.data
@@ -157,6 +137,42 @@ class BodyParser(object):
                 body = json.dumps({})
 
         return body
+
+
+LOGGER_FILE_NAME = 'access.log.json'
+MAX_LOG_SIZE = 20971520
+NUMBER_OF_LOG_FILES = 100
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--log-directory", dest='log_directory',
+                    help='Input json file with shodan data',
+                    default=(os.path.dirname(os.path.realpath(__file__))))
+parser.add_argument("--app-port", dest='port',
+                    help='Port flask app will listen on',
+                    default=8000)
+
+args = parser.parse_args()
+log_file = os.path.join(os.path.abspath((os.path.expanduser(args.log_directory))), LOGGER_FILE_NAME)
+
+app = Flask(__name__)
+
+json_file_handler = RotatingFileHandler(log_file, maxBytes=MAX_LOG_SIZE,
+                                        backupCount=NUMBER_OF_LOG_FILES)
+# %(created)f <- time.time() to convert to ms int(time.time()*1000)
+json_formatter = logging.Formatter('{"timestamp": "%(created)f", "time": "%(asctime)s", "loglevel": "%(levelname)s", "request_data": %(message)s}')
+# set formatter to use gmt format
+json_formatter.converter = time.gmtime
+json_file_handler.setFormatter(json_formatter)
+app.logger.setLevel(logging.INFO)
+app.logger.addHandler(json_file_handler)
+
+
+@app.route('/', defaults={'path': ''}, methods=['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+@app.route('/<path:path>', methods=['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+def hello_world(path):
+    return 'Ok\n'
+
 
 @app.before_request
 def log_entry():
@@ -187,7 +203,7 @@ def log_entry():
         "body": body
     }
 
-    logger.info('{'\
+    app.logger.info('{'\
                      '"remote_ip": "%(remote_ip)s", '\
                      '"remote_port": "%(remote_port)s", '\
                      '"server_port": "%(server_port)s", '\
@@ -207,21 +223,6 @@ def log_entry():
                          '}'\
                     '}', context)
 
-@app.route('/', defaults={'path': ''}, methods=['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
-@app.route('/<path:path>', methods=['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
-def hello_world(path):
-    return 'Ok\n'
-
 
 if __name__ == "__main__":
-
-    # TODO: make this a configurable
-    port = 8000
-    if len(sys.argv) > 1 and sys.argv[1].isdigit():
-        port = int(sys.argv[1])
-
-    print('Starting test server on port {0}'.format(port))
-
-    # TODO: make this configurable
-    # app.run('0.0.0.0', port=port)
     app.run(port=port)
