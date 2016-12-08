@@ -1,0 +1,11 @@
+[Unit]
+Description=uWSGI service to run simple-http-server
+
+[Service]
+# /var/log/simple-http-server location where we want to store log files
+# specified as a parameter --log-directory in server.ini
+ExecStartPre=-/bin/bash -c 'mkdir -p /var/log/simple-http-server; chown www-data:adm /var/log/simple-http-server'
+ExecStart=/bin/bash -c 'cd /var/www/simple-http-server/; source venv/bin/activate; uwsgi --ini server.ini'
+
+[Install]
+WantedBy=multi-user.target
