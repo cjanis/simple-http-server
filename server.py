@@ -154,7 +154,7 @@ parser.add_argument("--app-port", dest='port',
 
 args = parser.parse_args()
 log_file = os.path.join(os.path.abspath((os.path.expanduser(args.log_directory))), LOGGER_FILE_NAME)
-
+port = args.port
 app = Flask(__name__)
 
 json_file_handler = RotatingFileHandler(log_file, maxBytes=MAX_LOG_SIZE,
