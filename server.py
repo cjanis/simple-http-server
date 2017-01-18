@@ -4,7 +4,7 @@ import time
 import argparse
 import os
 import logging
-from logging.handlers import RotatingFileHandler
+from logging.handlers import TimedRotatingFileHandler
 
 from flask import Flask, render_template, make_response, request, Response, current_app
 from werkzeug.datastructures import Headers, MultiDict
@@ -142,6 +142,8 @@ class BodyParser(object):
 LOGGER_FILE_NAME = 'access.log.json'
 MAX_LOG_SIZE = 20971520
 NUMBER_OF_LOG_FILES = 100
+ROTATION_INTERVAL = 'D'
+ROTATION_DAYS = 30
 
 
 parser = argparse.ArgumentParser()
@@ -157,9 +159,10 @@ log_file = os.path.join(os.path.abspath((os.path.expanduser(args.log_directory))
 port = args.port
 app = Flask(__name__)
 
-json_file_handler = RotatingFileHandler(log_file, maxBytes=MAX_LOG_SIZE,
-                                        backupCount=NUMBER_OF_LOG_FILES)
-# %(created)f <- time.time() to convert to ms int(time.time()*1000)
+# json_file_handler = RotatingFileHandler(log_file, maxBytes=MAX_LOG_SIZE,
+#                                         backupCount=NUMBER_OF_LOG_FILES)
+json_file_handler = TimedRotatingFileHandler(log_file, when=ROTATION_INTERVAL,
+                                             backupCount=ROTATION_DAYS)
 json_formatter = logging.Formatter('{"timestamp": "%(created)f", "time": "%(asctime)s", "loglevel": "%(levelname)s", "request_data": %(message)s}')
 # set formatter to use gmt format
 json_formatter.converter = time.gmtime

@@ -10,4 +10,4 @@ ENV/
 # project specific env
 
 # log files
-access.log.json
+access.log.json*
