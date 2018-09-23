@@ -117,27 +117,21 @@ class BodyParser(object):
 
     def get_body(self):
         """
-        extracts and returns request body. retuns body as string
+        extracts and returns request body. returns body as string
         First it checks for known content type, if content type
         application/x-www-form-urlencoded it converts it to json using MultiDictParser
         application/*+json returns json
         all other types just return request.data
         """
-        # TODO: refactor this method
-        body = json.dumps({})
-        if 'content-length' in self.request.headers:
-            if self.request.headers['content-length'] != '':
-                if self.request.headers.get('content-type') == 'application/x-www-form-urlencoded':
-                    body = json.dumps(MultiDictParser(self.request.form).to_json())
-                elif self.request.is_json:
-                    body = json.dumps(self.request.get_json())
-                else:
-                    body = json.dumps(self.request.data)
-            elif self.request.headers['content-length'] == '0':
-                body = json.dumps({})
-
-        return body
-
+		body = json.dumps({})
+		if ('content-length' in self.request.headers) and (self.request.headers['content-length'] != ''):
+			if self.request.headers.get('content-type') == 'application/x-www-form-urlencoded':
+				body = json.dumps(MultiDictParser(self.request.form).to_json())
+			elif self.request.is_json:
+				body = json.dumps(self.request.get_json())
+			else:
+				body = json.dumps(self.request.data)
+		return body
 
 LOGGER_FILE_NAME = 'access.log.json'
 MAX_LOG_SIZE = 20971520
